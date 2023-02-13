@@ -13,24 +13,27 @@ async function validateEnrollment(userId: number) {
   return enrollment.id;
 }
 
-async function validateTicketAndRoom(enrollmentId: number, roomId: number) {
+async function validateRoom(roomId: number) {
+  const room = await bookingRepository.findRoom(roomId);
+
+  if (!room) {
+    throw 404;
+  }
+  if(room.Booking.length >= room.capacity)
+    throw 403;
+}
+
+async function validateTicket(enrollmentId: number) {
   const ticket = await ticketRepository.findTicketByEnrollmentId(enrollmentId);
 
   if (!ticket) 
-    throw notFoundError();
+    throw 403;
 
   if (ticket.status !== "PAID" || !ticket.TicketType.includesHotel || ticket.TicketType.isRemote)
     throw 403;
-
-  const room = bookingRepository.findRoom(roomId);
-
-  if (!room) 
-    throw notFoundError;
 }
 
 async function getBooking(userId: number) {
-  await validateEnrollment(userId);
-
   const booking = await bookingRepository.findBooking(userId);
 
   if (!booking) {
@@ -43,19 +46,54 @@ async function getBooking(userId: number) {
 async function createBooking(userId: number, roomId: number) {
   const enrollmentId = await validateEnrollment(userId);
 
-  await validateTicketAndRoom(enrollmentId, roomId);
+  await validateTicket(enrollmentId);
+
+  await validateRoom(roomId);
+
+  const booking = await bookingRepository.findBooking(userId);
+
+  if(booking) 
+    throw 403;
   
   const data = {
     userId,
     roomId,
   };
 
-  const booking = await bookingRepository.upsertBooking(0, data);
+  const bookingId = await bookingRepository.upsertBooking(0, data);
+
+  return bookingId.id;
 }
 
-const ticketService = {
+async function updateBooking(userId: number, roomId: number, bookingId: number) {
+  const enrollmentId = await validateEnrollment(userId);
+
+  await validateTicket(enrollmentId);
+
+  await validateRoom(roomId);
+
+  const booking = await bookingRepository.findBooking(userId);
+
+  if(!booking || booking.id !== bookingId)
+    throw 403;
+
+  if(booking.Room.id === roomId)
+    throw 403;
+  
+  const data = {
+    userId,
+    roomId,
+  };
+
+  const newBookingId = await bookingRepository.upsertBooking(bookingId, data);
+
+  return newBookingId.id;
+}
+
+const bookingService = {
   getBooking,
-  createBooking
+  createBooking,
+  updateBooking
 };
 
-export default ticketService;
+export default bookingService;
